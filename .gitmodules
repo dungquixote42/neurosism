@@ -1,0 +1,3 @@
+[submodule "sensorium_2023"]
+	path = sensorium_2023
+	url = https://github.com/ecker-lab/sensorium_2023

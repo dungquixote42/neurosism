@@ -1,3 +1,9 @@
 [submodule "sensorium_2023"]
 	path = sensorium_2023
 	url = https://github.com/ecker-lab/sensorium_2023
+[submodule "Conv4d-PyTorch"]
+	path = Conv4d-PyTorch
+	url = https://github.com/ZhengyuLiang24/Conv4d-PyTorch.git
+[submodule "Pytorch-UNet"]
+	path = Pytorch-UNet
+	url = https://github.com/milesial/Pytorch-UNet.git

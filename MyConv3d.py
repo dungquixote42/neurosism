@@ -8,7 +8,15 @@ from torch.types import _int, _size, SymInt
 from typing import Optional, Sequence, Union
 
 
-def _cross_correlation_3d(weight: Tensor, input: Tensor) -> Tensor:
+ARGN_BATCH_SIZE_MISSING = 4
+ARGN_BATCH_SIZE_PRESENT = 5
+
+INDEX_DEPTH = 0
+INDEX_HEIGHT = 1
+INDEX_WIDTH = 2
+
+
+def cross_correlation_3d(weight: Tensor, input: Tensor) -> Tensor:
     (wx, wy, wz) = weight.shape
     (ix, iy, iz) = input.shape
     rx = 1 - wx + ix
@@ -27,12 +35,8 @@ def _cross_correlation_3d(weight: Tensor, input: Tensor) -> Tensor:
     return result
 
 
-def _get_output_dimension(
-    inputDimension: int, padding: int, dilation: int, kernelSize: int, stride: int
-) -> int:
-    outputDimension = int(
-        (inputDimension + 2 * padding - dilation * (kernelSize - 1) - 1) / stride + 1
-    )
+def get_output_dimension(inputDimension: int, padding: int, dilation: int, kernelSize: int, stride: int) -> int:
+    outputDimension = int((inputDimension + 2 * padding - dilation * (kernelSize - 1) - 1) / stride + 1)
     return outputDimension
 
 
@@ -42,10 +46,11 @@ def _pad(
     mode: str = ...,
     value: Optional[float] = None,
 ) -> Tensor:
+    # TODO
     pass
 
 
-class MyConv3d(_ConvNd):
+class MyConv3d(torch.nn.Module):
     def __init__(
         self,
         in_channels: int,
@@ -57,37 +62,48 @@ class MyConv3d(_ConvNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = "zeros",  # TODO: refine this type
-        device=None,
-        dtype=None,
+        # device=None,
+        # dtype=None,
     ) -> None:
-        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        # factory_kwargs = {"device": device, "dtype": dtype}
         # we create new variables below to make mypy happy since kernel_size has
         # type Union[int, Tuple[int]] and kernel_size_ has type Tuple[int]
-        kernel_size_ = _triple(kernel_size)
-        stride_ = _triple(stride)
-        padding_ = padding if isinstance(padding, str) else _triple(padding)
-        dilation_ = _triple(dilation)
-        super().__init__(
-            in_channels,
-            out_channels,
-            kernel_size_,
-            stride_,
-            padding_,
-            dilation_,
-            False,
-            _triple(0),
-            groups,
-            bias,
-            padding_mode,
-            **factory_kwargs
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = _triple(kernel_size)
+        self.stride = _triple(stride)
+        self.padding = padding if isinstance(padding, str) else _triple(padding)
+        self.dilation = _triple(dilation)
+        self.groups = groups
+        self.padding_mode = padding_mode
+        # super().__init__(
+        #     in_channels,
+        #     out_channels,
+        #     kernel_size_,
+        #     stride_,
+        #     padding_,
+        #     dilation_,
+        #     False,
+        #     _triple(0),
+        #     groups,
+        #     bias,
+        #     padding_mode,
+        #     **factory_kwargs
+        # )
+        self.weight = torch.nn.Parameter(
+            Tensor(
+                out_channels, in_channels // groups, self.kernel_size[0], self.kernel_size[1], self.kernel_size[2]
+            )
         )
+        self.bias = torch.nn.Parameter(Tensor(out_channels)) if bias else None
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]):
         if self.padding_mode != "zeros":
+            # TODO
+            assert False
             return self._conv3d(
-                _pad(
-                    input, self._reversed_padding_repeated_twice, mode=self.padding_mode
-                ),
+                self._pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
                 weight,
                 bias,
                 self.stride,
@@ -95,9 +111,7 @@ class MyConv3d(_ConvNd):
                 self.dilation,
                 self.groups,
             )
-        return self._conv3d(
-            input, weight, bias, self.stride, self.padding, self.dilation, self.groups
-        )
+        return self._conv3d(input, weight, bias, self.stride, self.padding, self.dilation, self.groups)
 
     def _conv3d(
         self,
@@ -110,55 +124,89 @@ class MyConv3d(_ConvNd):
         groups: _int = 1,
     ) -> Tensor:
         shapeLength = len(input.shape)
-        assert shapeLength == 4 or shapeLength == 5
+        assert shapeLength == ARGN_BATCH_SIZE_MISSING or shapeLength == ARGN_BATCH_SIZE_PRESENT
+        assert bias != None  # TODO
+        assert groups == 1  # TODO
 
         inputDepth = input.shape[-3]
         inputHeight = input.shape[-2]
         inputWidth = input.shape[-1]
 
-        outputDepth = _get_output_dimension(
-            inputDepth, padding[0], dilation[0], self.kernel_size[0], stride[0]
+        padDepth = padding[INDEX_DEPTH]
+        padHeight = padding[INDEX_HEIGHT]
+        padWidth = padding[INDEX_WIDTH]
+
+        outputDepth = get_output_dimension(
+            inputDepth,
+            padDepth,
+            dilation[INDEX_DEPTH],
+            self.kernel_size[INDEX_DEPTH],
+            stride[INDEX_DEPTH],
         )
-        outputHeight = _get_output_dimension(
-            inputHeight, padding[1], dilation[1], self.kernel_size[1], stride[1]
+        outputHeight = get_output_dimension(
+            inputHeight,
+            padHeight,
+            dilation[INDEX_HEIGHT],
+            self.kernel_size[INDEX_HEIGHT],
+            stride[INDEX_HEIGHT],
         )
-        outputWidth = _get_output_dimension(
-            inputWidth, padding[2], dilation[2], self.kernel_size[2], stride[2]
+        outputWidth = get_output_dimension(
+            inputWidth,
+            padWidth,
+            dilation[INDEX_WIDTH],
+            self.kernel_size[INDEX_WIDTH],
+            stride[INDEX_WIDTH],
         )
 
         if padding != 0:
-            pad0, pad1, pad2 = padding[0], padding[1], padding[2]
-            input = F.pad(input, (pad2, pad2, pad1, pad1, pad0, pad0))
+            input = F.pad(input, (padWidth, padWidth, padHeight, padHeight, padDepth, padDepth))
 
         output = None
-        if shapeLength == 4:
-            output = torch.zeros(
-                self.out_channels, outputDepth, outputHeight, outputWidth
-            )
-            for j in range(0, self.out_channels):
-                output[j] = bias[j]
-                for k in range(0, self.in_channels):
-                    output[j] += _cross_correlation_3d(weight[j][k], input[k])
-        elif shapeLength == 5:
+        if shapeLength == ARGN_BATCH_SIZE_MISSING:
+            template = torch.zeros(self.out_channels, outputDepth, outputHeight, outputWidth)
+            output = self._process_without_batch_size(template, input, weight, bias)
+            # for j in range(0, self.out_channels):
+            #     output[j] = bias[j]
+            #     for k in range(0, self.in_channels):
+            #         output[j] += cross_correlation_3d(weight[j][k], input[k])
+        elif shapeLength == ARGN_BATCH_SIZE_PRESENT:
             batchSize = input.shape[0]
-            output = torch.zeros(
+            template = torch.zeros(
                 batchSize,
                 self.out_channels,
                 outputDepth,
                 outputHeight,
                 outputWidth,
             )
-            indices = [
-                (i, j) for i in range(batchSize) for j in range(self.out_channels)
-            ]
-            for i, j in indices:
-                output[i][j] = bias[j]
-                for k in range(0, self.in_channels):
-                    output[i][j] += _cross_correlation_3d(weight[j][k], input[i][k])
+            output = self._process_with_batch_size(template, input, weight, bias, batchSize)
+            # indices = [(i, j) for i in range(batchSize) for j in range(self.out_channels)]
+            # for i, j in indices:
+            #     output[i][j] = bias[j]
+            #     for k in range(0, self.in_channels):
+            #         output[i][j] += cross_correlation_3d(weight[j][k], input[i][k])
         else:
             assert False
 
         return output
+
+    def _process_with_batch_size(
+        self, template: Tensor, input: Tensor, weight: Tensor, bias: Tensor, batchSize: int
+    ) -> Tensor:
+        indices = [(i, j) for i in range(batchSize) for j in range(self.out_channels)]
+        for i, j in indices:
+            template[i][j] = bias[j]
+            for k in range(0, self.in_channels):
+                template[i][j] += cross_correlation_3d(weight[j][k], input[i][k])
+        return template
+
+    def _process_without_batch_size(self, template: Tensor, input: Tensor, weight: Tensor, bias: Tensor) -> Tensor:
+        for j in range(0, self.out_channels):
+            template[j] = bias[j]
+            print(weight.shape)
+            print(bias.shape)
+            for k in range(0, self.in_channels):
+                template[j] += cross_correlation_3d(weight[j][k], input[k])
+        return template
 
     def forward(self, input: Tensor) -> Tensor:
         return self._conv_forward(input, self.weight, self.bias)

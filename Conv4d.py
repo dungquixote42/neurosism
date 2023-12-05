@@ -43,81 +43,39 @@ def get_output_dimension(inputDimension: int, padding: int, dilation: int, kerne
     return outputDimension
 
 
-def _pad(
-    input: Tensor,
-    pad: Sequence[int],
-    mode: str = ...,
-    value: Optional[float] = None,
-) -> Tensor:
-    # TODO
-    pass
-
-
-class Conv4d(nn.Module):
+class Conv4d(torch.nn.Module):
     def __init__(
         self,
-        inputChannels,
-        outputChannels,
-        kernelSize,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: _size_4_t,
         stride: _size_4_t = 1,
         padding: Union[str, _size_4_t] = 0,
         dilation: _size_4_t = 1,
         groups: int = 1,
         bias: bool = True,
-        paddingMode: str = "zeros",
-    ):
+        padding_mode: str = "zeros",  # TODO: refine this type
+    ) -> None:
         super().__init__()
-
-        self.in_channels = inputChannels
-        self.out_channels = outputChannels
-        self.kernel_size = _quadruple(kernelSize)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = _quadruple(kernel_size)
         self.stride = _quadruple(stride)
         self.padding = padding if isinstance(padding, str) else _quadruple(padding)
         self.dilation = _quadruple(dilation)
         self.groups = groups
-        self.padding_mode = paddingMode
-
-        self.weight = nn.Parameter(torch.ones(outputChannels, inputChannels, kernelSize))
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(outputChannels))
-        else:
-            self.bias = None
-        # def __init__(
-        #     self,
-        #     in_channels: int,
-        #     out_channels: int,
-        #     kernel_size: _size_4_t,
-        #     stride: _size_4_t = 1,
-        #     padding: Union[str, _size_4_t] = 0,
-        #     dilation: _size_4_t = 1,
-        #     groups: int = 1,
-        #     bias: bool = True,
-        #     padding_mode: str = "zeros",  # TODO: refine this type
-        #     device=None,
-        #     dtype=None,
-        # ) -> None:
-        # factory_kwargs = {"device": device, "dtype": dtype}
-        # we create new variables below to make mypy happy since kernel_size has
-        # type Union[int, Tuple[int]] and kernel_size_ has type Tuple[int]
-        # kernel_size_ = _quadruple(kernel_size)
-        # stride_ = _quadruple(stride)
-        # padding_ = padding if isinstance(padding, str) else _quadruple(padding)
-        # dilation_ = _quadruple(dilation)
-        # super(Conv4d, self).__init__()
-        # super().__init__(
-        #     in_channels,
-        #     out_channels,
-        #     kernel_size_,
-        #     stride_,
-        #     padding_,
-        #     dilation_,
-        #     False,
-        #     _quadruple(0),
-        #     groups,
-        #     bias,
-        #     padding_mode,
-        #     **factory_kwargs
-        # )
+        self.padding_mode = padding_mode
+        self.weight = torch.nn.Parameter(
+            Tensor(
+                out_channels,
+                in_channels // groups,
+                self.kernel_size[0],
+                self.kernel_size[1],
+                self.kernel_size[2],
+                self.kernel_size[3],
+            )
+        )
+        self.bias = torch.nn.Parameter(Tensor(out_channels)) if bias else None
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]):
         if self.padding_mode != "zeros":
@@ -160,11 +118,7 @@ class Conv4d(nn.Module):
         padWidth = padding[INDEX_WIDTH]
 
         outputTime = get_output_dimension(
-            inputTime,
-            padTime,
-            dilation[INDEX_TIME],
-            self.kernel_size[INDEX_TIME],
-            stride[INDEX_TIME],
+            inputTime, padTime, dilation[INDEX_TIME], self.kernel_size[INDEX_TIME], stride[INDEX_TIME]
         )
         outputDepth = get_output_dimension(
             inputDepth,
@@ -223,8 +177,6 @@ class Conv4d(nn.Module):
 
     def _process_without_batch_size(self, template: Tensor, input: Tensor, weight: Tensor, bias: Tensor) -> Tensor:
         for j in range(0, self.out_channels):
-            print(template[j].shape)
-            print(bias[j].shape)
             template[j] = bias[j]
             for k in range(0, self.in_channels):
                 template[j] += cross_correlation_4d(weight[j][k], input[k])

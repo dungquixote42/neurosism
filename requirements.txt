@@ -1,0 +1,13 @@
+datajoint
+deeplake
+GitPython
+neuralpredictors @ git+https://github.com/sinzlab/neuralpredictors
+nnfabrik
+pandas
+pyarrow
+plotly
+wandb
+jupyter
+imageio
+torchvision
+scikit-image

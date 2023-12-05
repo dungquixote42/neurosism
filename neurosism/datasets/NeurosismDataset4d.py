@@ -4,14 +4,17 @@ import os
 
 import torch
 from torch.utils.data import Dataset
+
 # from torch import Tensor
 
 
 FRAME_SKIP_COUNT = 50
-# POOL_FACTOR = 8
-POOL_FACTOR = 16  # 5528
-# POOL_FACTOR = 32  # 2496
-# POOL_FACTOR = 64 # 394
+# POOL_FACTOR = 2 # 6179
+# POOL_FACTOR = 4 # 6179
+# POOL_FACTOR = 8 # 6170
+POOL_FACTOR = 16  # 5586
+# POOL_FACTOR = 32  # 2590
+# POOL_FACTOR = 64 # 398
 
 
 def get_valid_files(filePath1: str, filePath2: str) -> list:
@@ -25,15 +28,15 @@ def get_valid_files(filePath1: str, filePath2: str) -> list:
 
 
 def reshape_video_hwd_to_dhw(video: np.ndarray) -> np.ndarray:
-    (height, width, duration) = video.shape
-    indices = [(d, h, w) for d in range(duration) for h in range(height) for w in range(width)]
-    result = np.zeros((duration, height, width))
-    for d, h, w in indices:
-        result[d][h][w] = video[h][w][d]
+    (height, width, time) = video.shape
+    indices = [(t, h, w) for t in range(time) for h in range(height) for w in range(width)]
+    result = np.zeros((time, height, width))
+    for t, h, w in indices:
+        result[t][h][w] = video[h][w][t]
     return result
 
 
-class NeurosismDataset(Dataset):
+class NeurosismDataset4d(Dataset):
     def __init__(self, device, frameCount, parentDirectory, transform=None, transform_target=None):
         self.device = device
         self.frameCountActual = frameCount - FRAME_SKIP_COUNT
@@ -65,24 +68,9 @@ class NeurosismDataset(Dataset):
                 current = data[t][x][y][z]
                 incoming = responsesOverTime[t + FRAME_SKIP_COUNT]
                 data[t][x][y][z] = incoming if incoming > current else current
-                # data[t][x][y][z] += responsesOverTime[t + FRAME_SKIP_COUNT]
-        # video = reshape_video_hwd_to_dhw(np.load(self.videoPath + fileName))
-        data = self._reshape_data(data)
-        video = self._reshape_video(video)
-
+        # data = self._reshape_data(data)
+        # video = self._reshape_video(video)
         return data, video
-
-    # def _fill_data(self, data, n):
-    #     # for n in range(self.neuronCount):
-    #     (x, y, z) = self.coordinates[n]
-    #     x = (x - self.xMin) // POOL_FACTOR
-    #     y = (y - self.yMin) // POOL_FACTOR
-    #     z = (z - self.zMin) // POOL_FACTOR
-    #     responsesOverTime = responses[n]
-    #     for t in range(self.frameCountActual):
-    #         current = data[t][x][y][z]
-    #         incoming = responsesOverTime[t + FRAME_SKIP_COUNT]
-    #         data[t][x][y][z] = incoming if incoming > current else current
 
     def _generate_data_dimensions(self):
         self.xMin = xMax = 0
@@ -107,13 +95,6 @@ class NeurosismDataset(Dataset):
         for t, xx, yy, zz in indices:
             result[zz][y * xx + yy][t] = data[t][xx][yy][zz]
         return result
-        # big = max(x, y, z)
-        # large = int(x * y * z / big)
-        # data = data.reshape((t, min(big, large), max(big, large)))
-        # data = data.reshape(1, t, x * y * z)
-        # if self.device == "cuda":
-        #     return data.cuda()
-        # return data
 
     def _reshape_video(self, video: np.ndarray) -> np.ndarray:
         (height, width, time) = video.shape

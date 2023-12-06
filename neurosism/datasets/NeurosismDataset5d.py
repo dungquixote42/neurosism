@@ -39,9 +39,9 @@ def reshape_video_hwd_to_dhw(video: np.ndarray) -> np.ndarray:
     return result
 
 
-class NeurosismDataset3d(Dataset):
-    def __init__(self, device, frameCount, parentDirectory, densify=False, pool=1, seed=None):
-        self.device = device
+class NeurosismDataset5d(Dataset):
+    def __init__(self, frameCount, parentDirectory, densify=False, pool=1, seed=None):
+        # self.device = device
         self.frameCount = frameCount
         self.coordinates: np.ndarray = np.load(parentDirectory + COORDINATES_FILE_PATH)
         self.responsePath = parentDirectory + RESPONSES_PATH
@@ -64,10 +64,10 @@ class NeurosismDataset3d(Dataset):
         responses = np.load(self.responsePath + fileName)
         video: np.ndarray = np.load(self.videoPath + fileName)
         nthFrame = self.rng.integers(self.frameCount + FRAME_SKIP_COUNT, video.shape[2])
-        image = self._get_image3d(video, nthFrame)
+        image = self._get_image(video, nthFrame)
 
-        # data = np.zeros((1, self.xRange, self.yRange, self.zRange))
-        data = np.zeros((1, self.zRange, self.yRange, self.xRange))
+        data = np.zeros((1, 1, self.xRange, self.yRange, self.zRange))
+        # data = np.zeros((1, 1, self.zRange, self.yRange, self.xRange))
         for n in range(self.neuronCount):
             (x, y, z) = self.coordinates[n]
             x = (x - self.xMin) // self.pool
@@ -78,7 +78,8 @@ class NeurosismDataset3d(Dataset):
             for t in range(nthFrame - self.frameCount, nthFrame):
                 accumulator += responsesOverTime[t]
                 accumulator /= 2
-            data[0][z][y][x] = accumulator
+            data[0][0][x][y][z] = accumulator
+            # data[0][0][z][y][x] = accumulator
         return torch.tensor(data).float(), torch.tensor(image).float()
 
     def _condense_coordinates(self):
@@ -129,18 +130,10 @@ class NeurosismDataset3d(Dataset):
 
     def _get_image(self, video: np.ndarray, nthFrame):
         (h, w, _) = video.shape
-        result = np.ndarray((1, h, w))
+        result = np.ndarray((1, 1, 1, h, w))
         indices = [(hh, ww) for hh in range(h) for ww in range(w)]
         for hh, ww in indices:
-            result[0][hh][ww] = video[hh][ww][nthFrame]
-        return result
-
-    def _get_image3d(self, video: np.ndarray, nthFrame):
-        (h, w, _) = video.shape
-        result = np.ndarray((1, 1, h, w))
-        indices = [(hh, ww) for hh in range(h) for ww in range(w)]
-        for hh, ww in indices:
-            result[0][0][hh][ww] = video[hh][ww][nthFrame]
+            result[0][0][0][hh][ww] = video[hh][ww][nthFrame]
         return result
 
     def _reshape_data(self, data: np.ndarray) -> np.ndarray:

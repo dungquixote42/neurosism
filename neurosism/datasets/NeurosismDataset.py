@@ -8,6 +8,11 @@ COORDINATES_FILE_PATH = "/meta/neurons/cell_motor_coordinates.npy"
 RESPONSES_PATH = "/data/responses/"
 VIDEOS_PATH = "/data/videos/"
 
+RESPONSE_STD_PATH = "/meta/statistics/responses/all/std.npy"
+
+VIDEOS_MEAN_PATH = "/meta/statistics/videos/all/mean.npy"
+VIDEOS_STD_PATH = "/meta/statistics/videos/all/std.npy"
+
 
 def get_nonzero_count(input: torch.Tensor) -> int:
     (x, y, z) = input.shape
@@ -56,13 +61,26 @@ class NeurosismDataset(Dataset):
         self._calculate_data_dimensions()
         self.validFiles = get_valid_files(self.responsePath, self.videoPath)
 
+        self.responseStds: np.ndarray = np.load(parentDirectory + RESPONSE_STD_PATH)
+        self.threshold = self.responseStds.mean() * 0.01
+        self.idx = self.responseStds > self.threshold
+        self.responsePrecision = np.ones_like(self.responseStds) / self.threshold
+        self.responsePrecision[self.idx] = 1 / self.responseStds[self.idx]
+
+        self.videoMeans = np.load(parentDirectory + VIDEOS_MEAN_PATH)
+        self.videoStds = np.load(parentDirectory + VIDEOS_STD_PATH)
+
     def __len__(self):
         return len(self.validFiles)
 
     def __getitem__(self, idx):
         fileName = self.validFiles[idx]
+
         responses = np.load(self.responsePath + fileName)
+        responses *= self.responsePrecision
+
         video: np.ndarray = np.load(self.videoPath + fileName)
+        video = (video - self.videoMeans) / self.videoStds
         nthFrame = self.rng.integers(self.overlayCount + self.frameSkipCount, video.shape[2])
 
         image = self._get_image(video, nthFrame)

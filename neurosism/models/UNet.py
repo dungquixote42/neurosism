@@ -46,7 +46,7 @@ class UNet(nn.Module):
 
         self.lastOp = nn.Sequential(nn.Conv3d(128, 1, (1, 42, 14)), nn.ReLU(inplace=True))
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.firstOp(x)
         x1 = self.downOp1(x)
         x2 = self.downOp2(x1)
